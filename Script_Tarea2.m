@@ -1,0 +1,1 @@
+Objeto = Tarea2('base_22.xls');
