@@ -1,4 +1,4 @@
-classdef Causalidad_Granger
+classdef Tarea2
     %objeto desarrolado para la resolución de la tarea 2
     %   
     
