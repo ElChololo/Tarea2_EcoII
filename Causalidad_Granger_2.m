@@ -1,4 +1,4 @@
-classdef Causalidad_Granger
+classdef Causalidad_Granger_2
     %objeto desarrolado para la resolución de la tarea 2
     %   
     
@@ -6,13 +6,16 @@ classdef Causalidad_Granger
         df
         raz_pi
         raz_y
+        tpm
     end
     
     methods
-        function obj = Tarea2(xlsx)
+        function obj = Causalidad_Granger_2(xlsx)
             %Importación de datos de la tarea
             % df tiene 4 columnas, fecha, IMACEC, IPC y Tasa de política
             obj.df = readmatrix(xlsx);
+            % serie tpm
+            obj.tpm = obj.df(13:end,4);
             % Construir las series pi e y 
             % Se necesita perder las 12 primeras observaciones de cada
             % serie, MATLAB tiene el primer indice como 1, por tanto hay
@@ -31,10 +34,10 @@ classdef Causalidad_Granger
             obj.raz_y = log(raz_y);
         end
         
-        function [p,est_q] = P1_RepAR(obj,serie,orden_max_ar,n_correlaciones)
-            %% Estimar la primera representación AR de la serie que genere ruidos blancos       
+        function [p,est_q,wht_ns] = P1_RepAR(obj,serie,orden_max_ar,n_correlaciones)
+            %% Estimar la primera representación AR de la serie que genere ruidos blancos        
             for j=1:orden_max_ar
-                % Perder observaciones(MODIFICABLE SI SE NECESITAN LOS AR CON MISMO NUMERO DE OBS)
+                % Perder observaciones para estimar el AR(orden_ar)
                 Var_Depe = serie(j+1:end);
                 obs =length(Var_Depe);
                 Regresores = obj.Get_Regresores(serie,j);
@@ -45,9 +48,10 @@ classdef Causalidad_Granger
                 % Computar test errores ruido blanco
                 
                 [Test_pass,est_Q] = obj.Test_Q(resid,resid_2,n_correlaciones,obs);
-                if Test_pass == 0
+                if Test_pass == 1
                     p=j;
                     est_q = est_Q ;
+                    wht_ns = resid;
                     break
                 end
             end
@@ -74,63 +78,58 @@ classdef Causalidad_Granger
             end
             %Armar el estadístico Q
             for k=1:n_correlaciones
-                vec_corr_est(j) = (vec_corr_est(j)^2) /  (obs-n_correlaciones);
+                vec_corr_est(k) = (vec_corr_est(k)^2) /  (obs-k);
             end
             est_Q = obs*(obs+2)*sum(vec_corr_est);
-            Boolean_Test = est_Q < chi2inv(0.975,2);
+            % Devuelve 0 si rechazo la hipótesis nula, 1 si no lo rechazo
+            Boolean_Test = est_Q < chi2inv(0.95,n_correlaciones);
         end
         
-        function coef_est = Causalidad_Granger(obj,serie,p,serie_2,orden_rez)
-            %Primero Armar el AR que hace que los errores sean ruido blanco
-            Var_Depe= serie(p+1:end);
-            Regresores_Ar = obj.Get_Regresores(serie,p);
-            % Agregar los regresores externos
-            for j=1:orden_rez
-                Regresores_Ext = obj.Get_Regresores(serie_2,j);
-                % Concatenar regresores, ojo que los regresores ext tiene
-                % intercepto
-                Regresores_Ext = Regresores_Ext(:,2:end);
-                Regresores = [Regresores_Ar Regresores_Ext];
-                %coef_est es un vector columna, con las 2 primeras filas
-                %correspondientes al intercepto y al rezago 1
+        function phi_sig = Causalidad_Granger(obj,resid_wht,serie_2,orden_rez)
+            % Ya obtenidos ruidos blancos, ver si los rezagos de la serie 2
+            % tienen coeficientes asociados distintos de 0 en una regresión
+            % contra esos ruidos blancos
+            % Testear suficientes rezagos;
+            for i=1:orden_rez
+                Var_Depe = resid_wht;
+                Regresores = obj.Get_Regresores(serie_2,i);
+                % Dado que los errores vienen de procesos AR() se perderan
+                % observaciones en la matriz de regresores. Además si el
+                % orden de rezagos a utilizar es lo suficientemente grande
+                % también se deberan perder observaciones en los
+                % regresores.
+                n_var_depe = length(Var_Depe);
+                n_reg =length(Regresores);
+                if n_var_depe < n_reg
+                   diff = n_reg-n_var_depe;
+                   
+                   Regresores = Regresores(diff+1:end,:);
+                elseif  n_var_depe > n_reg
+                    diff = n_var_depe-n_reg;
+                    Var_Depe=Var_Depe(diff+1:end);
+                end
                 coef_est = (Regresores'*Regresores)\(Regresores'*Var_Depe);
-                % Realizar test para ver si los regresores Ext -> Externos
-                % no son estadisticamente diferentes de 0.
                 resid = Var_Depe - Regresores*coef_est;
                 resid_2 = resid'*resid;
                 T =length(Var_Depe);
-                k = length(coef_Est);
-                sigma_est = resid_2 / ( T-k );
-                var_betas = sigma_est * ( (Regresores'*Regresores)^(-1) );
-                if j ==1
-                    est_t = coef_est/ var_betas(3,3);
-                    val_critico =  tinv(0.95,(T - k);
-                    if est_t > val_critico
-                       %se rechaza la hipotesis nula que serie 2 no causa a serie 1 en primer rezago 
-                    end
-                else
-                    %Armar el test F
-                    
-                    R = ones(k,1);
-                    %% Ojo que estas asumiendo aqui que la  mejor representacion es un AR(1) para la serie 1
-                    R(1:2) = [0;0];
-                    c = zeros(k-2);
-                    aux_f = (R'*coef_Est-c);
-                    %Nuevamente ese k-2 asume que la mejor representación
-                    %es AR(1)
-                    est_f = ( (aux_f)'*[sigma_est*R'*(Regresores'*Regresores)/R]*aux_f ) / (k-2);
-                    valor_critico = finv(0.95,k-2,T-k);
-                    if est_f > valor_critico
-                        %se rechaza la hipotesis nula
-                        
-                    end
+                k = length(coef_est);
+                sigma_2_est = resid_2 / ( T-k );
+                var_betas = sigma_2_est * ( (Regresores'*Regresores)^(-1) );
+                % Computar la significancia estadística individual
+                significancia = zeros(k,1);
+                for j=2:k
+                   t_est=coef_est(j)/sqrt(sigma_2_est*var_betas(j,j));
+                   valor_critico = tinv(0.95,T-k);
+                   if t_est > valor_critico
+                       %coeficiente significativo
+                       significancia(j)=1;
+                   end
                 end
-                
-                
-                
+                phi_sig= [coef_est(2:end) significancia(2:end)];
+
             end
+              
             
         end
     end
 end
-
