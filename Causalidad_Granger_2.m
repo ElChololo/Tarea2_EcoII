@@ -45,6 +45,7 @@ classdef Causalidad_Granger_2
                 phis = (Regresores'*Regresores)\(Regresores'*Var_Depe);
                 resid = Var_Depe - Regresores*phis;
                 resid_2 = resid'*resid;
+                
                 % Computar test errores ruido blanco
                 
                 [Test_pass,est_Q] = obj.Test_Q(resid,resid_2,n_correlaciones,obs);
@@ -85,11 +86,12 @@ classdef Causalidad_Granger_2
             Boolean_Test = est_Q < chi2inv(0.95,n_correlaciones);
         end
         
-        function phi_sig = Causalidad_Granger(obj,resid_wht,serie_2,orden_rez)
+        function [phi_sig,orden] = Causalidad_Granger(obj,resid_wht,serie_2,orden_rez)
             % Ya obtenidos ruidos blancos, ver si los rezagos de la serie 2
             % tienen coeficientes asociados distintos de 0 en una regresión
             % contra esos ruidos blancos
             % Testear suficientes rezagos;
+            ind = 0;
             for i=1:orden_rez
                 Var_Depe = resid_wht;
                 Regresores = obj.Get_Regresores(serie_2,i);
@@ -116,16 +118,29 @@ classdef Causalidad_Granger_2
                 sigma_2_est = resid_2 / ( T-k );
                 var_betas = sigma_2_est * ( (Regresores'*Regresores)^(-1) );
                 % Computar la significancia estadística individual
-                significancia = zeros(k,1);
+                
+                err_std = zeros(k,1);
+                estad_t = zeros(k,1);
+                valor_p = zeros(k,1);
                 for j=2:k
-                   t_est=coef_est(j)/sqrt(sigma_2_est*var_betas(j,j));
-                   valor_critico = tinv(0.95,T-k);
-                   if t_est > valor_critico
+                   err_std(j) = sqrt(var_betas(j,j));
+                   t_est=coef_est(j)/err_std(j);
+                   estad_t(j) = t_est;
+                   valor_p(j) = tcdf(abs(t_est),T-k,'upper')*2;
+                   if valor_p(j) < 0.05
                        %coeficiente significativo
-                       significancia(j)=1;
+
+                       
+                       ind=1;
+                       
                    end
                 end
-                phi_sig= [coef_est(2:end) significancia(2:end)];
+                phi_sig= [coef_est(2:end) err_std(2:end) estad_t(2:end) valor_p(2:end) ];
+                if ind==1
+                    fprintf("Significancia encontrada\n")
+                    orden = i;
+                    break
+                end
 
             end
               
